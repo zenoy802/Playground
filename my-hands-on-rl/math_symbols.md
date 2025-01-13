@@ -80,3 +80,11 @@ Note：notation上，大写的字母为stochastic random variable，代表某个
     $$
     Q^*(s, a) = r(s, a) + \gamma \sum_{s' \in S} p(s'|s,a) \max_{a'\in A}Q^*(s',a')
     $$
+11. 策略学习目标函数
+    $$
+    J(\theta) = \mathbb{E}_{s_0}[V^{\pi_\theta}(s_0)]
+    $$
+12. 策略梯度
+    $$
+    \nabla_\theta J(\theta) = \sum_{s\in S}\nu^{\pi_\theta}(s)\sum_{a\in A}\pi_\theta(a|s)Q^{\pi_\theta}(s,a) \dfrac{\nabla_\theta\pi_\theta(a|s)}{\pi_\theta(a|s)} = \mathbb{E}_{\pi_\theta}[Q^{\pi_\theta}(s,a)\nabla_\theta log\pi_\theta(a|s)]
+    $$
