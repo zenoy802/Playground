@@ -22,9 +22,9 @@ class MultiHeadAttention(nn.Module):
         self.fc = nn.Linear(d_model, d_model)
 
     def forward(self, idx):
+        B, T, C = idx.shape
         # here C should be equal to d_model or n_embed
         assert C == self.d_model
-        B, T, C = idx.shape
         q = self.Q(idx)
         k = self.K(idx)
         v = self.V(idx)
@@ -61,7 +61,7 @@ def GroupQueryAttention():
         # d_model here means n_embed
         self.d_model = d_model
         # hs: head size
-        self.hs = C // self.n_head
+        self.hs = self.d_model // self.n_head
         # gs: group size
         self.gs = self.n_head // self.n_group
 
@@ -73,9 +73,9 @@ def GroupQueryAttention():
         self.fc = nn.Linear(d_model, d_model)
 
     def forward(self, idx):
+        B, T, C = idx.shape
         # here C should be equal to d_model or n_embed
         assert C == self.d_model
-        B, T, C = idx.shape
         q = self.Q(idx)
         k = self.K(idx)
         v = self.V(idx)
