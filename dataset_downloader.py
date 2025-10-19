@@ -99,27 +99,89 @@ class GenericHuggingFaceDownloader(DatasetDownloader):
             # 尝试使用HF Mirror镜像源
             try:
                 print(f"尝试从HF Mirror镜像源下载: {self.dataset_id}")
-                # 设置镜像源环境变量
-                original_endpoint = os.environ.get('HF_ENDPOINT')
-                os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
                 
-                result = load_dataset(**load_args)
+                # 直接使用huggingface_hub的API并指定镜像源
+                from huggingface_hub import HfApi
+                import subprocess
+                import sys
                 
-                # 恢复原始环境变量
-                if original_endpoint:
-                    os.environ['HF_ENDPOINT'] = original_endpoint
-                else:
-                    os.environ.pop('HF_ENDPOINT', None)
+                # 使用子进程的方式，在新的环境中运行下载
+                script_content = f'''
+import os
+import tempfile
+import sys
+
+# 设置临时目录为用户可写的目录
+temp_dir = os.path.join(os.path.expanduser("root"), "autodl-tmp", ".cache", "temp_datasets")
+os.makedirs(temp_dir, exist_ok=True)
+
+# 设置所有可能的临时目录环境变量
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+os.environ["HUGGINGFACE_HUB_URL"] = "https://hf-mirror.com"
+os.environ["TMPDIR"] = temp_dir
+os.environ["TEMP"] = temp_dir
+os.environ["TMP"] = temp_dir
+os.environ["HF_HOME"] = "/root/autodl-tmp/.cache"
+os.environ["TRANSFORMERS_CACHE"] = temp_dir
+os.environ["HF_DATASETS_CACHE"] = "/root/autodl-tmp/.cache"
+
+from datasets import load_dataset
+import pickle
+
+try:
+    load_args = {repr(load_args)}
+    dataset = load_dataset(**load_args)
+    
+    # 保存数据集到临时文件
+    temp_file = os.path.join(temp_dir, f"dataset_{{os.getpid()}}.pkl")
+    with open(temp_file, 'wb') as f:
+        pickle.dump(dataset, f)
+    print(f"TEMP_FILE:{{temp_file}}")
+except Exception as e:
+    print(f"ERROR:{{str(e)}}")
+    exit(1)
+'''
                 
-                return result
+                # 写入临时脚本文件
+                import tempfile
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as script_file:
+                    script_file.write(script_content)
+                    script_path = script_file.name
+                
+                try:
+                    # 运行脚本
+                    result = subprocess.run([sys.executable, script_path], 
+                                          capture_output=True, text=True, timeout=300)
+                    
+                    if result.returncode == 0:
+                        # 解析输出获取临时文件路径
+                        for line in result.stdout.split('\n'):
+                            if line.startswith('TEMP_FILE:'):
+                                temp_file_path = line.replace('TEMP_FILE:', '')
+                                
+                                # 加载数据集
+                                import pickle
+                                with open(temp_file_path, 'rb') as f:
+                                    dataset = pickle.load(f)
+                                
+                                # 清理临时文件
+                                os.unlink(temp_file_path)
+                                os.unlink(script_path)
+                                
+                                return dataset
+                    else:
+                        error_msg = result.stderr or result.stdout
+                        raise Exception(f"镜像源下载失败: {error_msg}")
+                        
+                except subprocess.TimeoutExpired:
+                    raise Exception("镜像源下载超时")
+                finally:
+                    # 清理脚本文件
+                    if os.path.exists(script_path):
+                        os.unlink(script_path)
+                        
             except Exception as mirror_e:
                 print(f"镜像源下载也失败: {str(mirror_e)}")
-                
-                # 恢复原始环境变量
-                if original_endpoint:
-                    os.environ['HF_ENDPOINT'] = original_endpoint
-                else:
-                    os.environ.pop('HF_ENDPOINT', None)
                 
                 # 检查本地缓存
                 cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "datasets", self.dataset_id.replace("/", "___"))
