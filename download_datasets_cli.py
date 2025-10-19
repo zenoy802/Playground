@@ -34,7 +34,7 @@ def main():
     parser.add_argument(
         "--output-dir", 
         type=str, 
-        default="data", 
+        default="/root/autodl-tmp/data", 
         help="数据保存目录 (默认: data)"
     )
     

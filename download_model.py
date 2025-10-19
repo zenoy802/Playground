@@ -20,7 +20,7 @@ def main(args):
     # 下载并保存tokenizer
     print("下载tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, trust_remote_code=True)
-    # tokenizer.save_pretrained(os.path.join(args.output_dir, f"{args.model_name_or_path}_tokenizer"))
+    tokenizer.save_pretrained(os.path.join(args.output_dir, f"{args.model_name_or_path}_tokenizer"))
     
     # 下载并保存模型
     print("下载模型...")
@@ -32,8 +32,8 @@ def main(args):
     )
     
     model_save_path = os.path.join(args.output_dir, f"{args.model_name_or_path}_base_model")
-    # model.save_pretrained(model_save_path)
-    # print(f"模型已保存到: {model_save_path}")
+    model.save_pretrained(model_save_path)
+    print(f"模型已保存到: {model_save_path}")
     
     print("模型下载完成！")
 
