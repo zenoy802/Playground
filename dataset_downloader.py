@@ -6,9 +6,52 @@
 """
 
 import os
+import time
+import requests
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Any
 from datasets import load_dataset
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+
+def setup_network_config():
+    """配置网络设置，包括重试机制和超时"""
+    # 设置环境变量以改善网络连接
+    os.environ.setdefault('HF_HUB_TIMEOUT', '60')  # 增加超时时间到60秒
+    os.environ.setdefault('REQUESTS_TIMEOUT', '60')
+    
+    # 配置requests的重试策略
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=5,  # 总重试次数
+        backoff_factor=2,  # 退避因子
+        status_forcelist=[429, 500, 502, 503, 504],  # 需要重试的HTTP状态码
+        allowed_methods=["HEAD", "GET", "OPTIONS"]  # 允许重试的HTTP方法
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    
+    return session
+
+
+def download_with_retry(func, max_retries=3, delay=5, **kwargs):
+    """带重试机制的下载函数"""
+    for attempt in range(max_retries):
+        try:
+            return func(**kwargs)
+        except Exception as e:
+            error_msg = str(e).lower()
+            # 检查是否是网络相关错误
+            if any(keyword in error_msg for keyword in ['timeout', 'connection', 'network', 'httperror']):
+                if attempt < max_retries - 1:
+                    print(f"网络错误，{delay}秒后进行第{attempt + 2}次尝试...")
+                    time.sleep(delay)
+                    delay *= 2  # 指数退避
+                    continue
+            raise e
+    return None
 
 
 class DatasetDownloader(ABC):
@@ -37,10 +80,60 @@ class GenericHuggingFaceDownloader(DatasetDownloader):
         super().__init__(output_dir)
         self.dataset_id = dataset_id
         self.custom_name = custom_name or dataset_id.replace("/", "_").replace("-", "_")
+        # 初始化网络配置
+        setup_network_config()
     
     @property
     def name(self) -> str:
         return self.custom_name
+    
+    def _load_dataset_with_fallback(self, **load_args):
+        """使用镜像源回退机制加载数据集"""
+        # 首先尝试使用默认源
+        try:
+            print(f"尝试从默认源下载: {self.dataset_id}")
+            return load_dataset(**load_args)
+        except Exception as e:
+            print(f"默认源下载失败: {str(e)}")
+            
+            # 尝试使用HF Mirror镜像源
+            try:
+                print(f"尝试从HF Mirror镜像源下载: {self.dataset_id}")
+                # 设置镜像源环境变量
+                original_endpoint = os.environ.get('HF_ENDPOINT')
+                os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
+                
+                result = load_dataset(**load_args)
+                
+                # 恢复原始环境变量
+                if original_endpoint:
+                    os.environ['HF_ENDPOINT'] = original_endpoint
+                else:
+                    os.environ.pop('HF_ENDPOINT', None)
+                
+                return result
+            except Exception as mirror_e:
+                print(f"镜像源下载也失败: {str(mirror_e)}")
+                
+                # 恢复原始环境变量
+                if original_endpoint:
+                    os.environ['HF_ENDPOINT'] = original_endpoint
+                else:
+                    os.environ.pop('HF_ENDPOINT', None)
+                
+                # 检查本地缓存
+                cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "datasets", self.dataset_id.replace("/", "___"))
+                if os.path.exists(cache_dir):
+                    print(f"尝试从本地缓存加载: {cache_dir}")
+                    try:
+                        # 尝试离线模式
+                        load_args_offline = load_args.copy()
+                        load_args_offline['download_mode'] = 'reuse_cache_if_exists'
+                        return load_dataset(**load_args_offline)
+                    except Exception as cache_e:
+                        print(f"本地缓存加载失败: {str(cache_e)}")
+                
+                raise Exception(f"所有下载方式都失败了。原始错误: {str(e)}, 镜像源错误: {str(mirror_e)}")
     
     def download(self, 
                  split: Optional[str] = None,
@@ -72,8 +165,17 @@ class GenericHuggingFaceDownloader(DatasetDownloader):
             if split:
                 load_args['split'] = split
             
-            # 加载数据集
-            dataset = load_dataset(**load_args)
+            # 使用重试机制和镜像源回退加载数据集
+            dataset = download_with_retry(
+                self._load_dataset_with_fallback,
+                max_retries=3,
+                delay=5,
+                **load_args
+            )
+            
+            if dataset is None:
+                return False
+                
             print(f"成功加载数据集: {self.dataset_id}")
             
             # 如果是DatasetDict，处理每个分割
@@ -103,6 +205,11 @@ class GenericHuggingFaceDownloader(DatasetDownloader):
 class BelleDownloader(DatasetDownloader):
     """BELLE中文指令微调数据集下载器"""
     
+    def __init__(self, output_dir: str = "data"):
+        super().__init__(output_dir)
+        # 初始化网络配置
+        setup_network_config()
+    
     @property
     def name(self) -> str:
         return "belle"
@@ -113,17 +220,38 @@ class BelleDownloader(DatasetDownloader):
         
         try:
             # 尝试下载BELLE-2M数据集
-            dataset = load_dataset("BelleGroup/train_2M_CN", split="train")
-            print("成功加载BELLE-2M数据集")
+            dataset = download_with_retry(
+                lambda: load_dataset("BelleGroup/train_2M_CN", split="train"),
+                max_retries=3,
+                delay=5
+            )
+            if dataset:
+                print("成功加载BELLE-2M数据集")
+            else:
+                raise Exception("重试后仍无法加载BELLE-2M")
         except Exception as e:
             print(f"无法加载BELLE-2M，尝试加载BELLE-1M: {str(e)}")
             try:
-                dataset = load_dataset("BelleGroup/train_1M_CN", split="train")
-                print("成功加载BELLE-1M数据集")
+                dataset = download_with_retry(
+                    lambda: load_dataset("BelleGroup/train_1M_CN", split="train"),
+                    max_retries=3,
+                    delay=5
+                )
+                if dataset:
+                    print("成功加载BELLE-1M数据集")
+                else:
+                    raise Exception("重试后仍无法加载BELLE-1M")
             except Exception as e2:
                 print(f"无法加载BELLE-1M，尝试加载更小的BELLE数据集: {str(e2)}")
-                dataset = load_dataset("BelleGroup/generated_chat_0.4M", split="train")
-                print("成功加载BELLE-0.4M数据集")
+                dataset = download_with_retry(
+                    lambda: load_dataset("BelleGroup/generated_chat_0.4M", split="train"),
+                    max_retries=3,
+                    delay=5
+                )
+                if dataset:
+                    print("成功加载BELLE-0.4M数据集")
+                else:
+                    return False
         
         # 采样处理
         if sample_size > 0 and len(dataset) > sample_size:
@@ -138,6 +266,11 @@ class BelleDownloader(DatasetDownloader):
 
 class CEvalDownloader(DatasetDownloader):
     """C-Eval中文评估数据集下载器"""
+    
+    def __init__(self, output_dir: str = "data"):
+        super().__init__(output_dir)
+        # 初始化网络配置
+        setup_network_config()
     
     @property
     def name(self) -> str:
@@ -168,11 +301,18 @@ class CEvalDownloader(DatasetDownloader):
         success_count = 0
         for task in tasks:
             try:
-                dataset = load_dataset("ceval/ceval-exam", name=task, trust_remote_code=True)
-                save_path = os.path.join(self.output_dir, f"ceval_dataset/{task}")
-                dataset.save_to_disk(save_path)
-                print(f"C-Eval数据集 {task} 已保存到 {save_path}")
-                success_count += 1
+                dataset = download_with_retry(
+                    lambda: load_dataset("ceval/ceval-exam", name=task, trust_remote_code=True),
+                    max_retries=3,
+                    delay=5
+                )
+                if dataset:
+                    save_path = os.path.join(self.output_dir, f"ceval_dataset/{task}")
+                    dataset.save_to_disk(save_path)
+                    print(f"C-Eval数据集 {task} 已保存到 {save_path}")
+                    success_count += 1
+                else:
+                    print(f"重试后仍无法加载C-Eval任务 {task}")
             except Exception as e:
                 print(f"无法加载C-Eval任务 {task}: {str(e)}")
         
@@ -182,6 +322,11 @@ class CEvalDownloader(DatasetDownloader):
 
 class CMMluDownloader(DatasetDownloader):
     """CMMLU中文评估数据集下载器"""
+    
+    def __init__(self, output_dir: str = "data"):
+        super().__init__(output_dir)
+        # 初始化网络配置
+        setup_network_config()
     
     @property
     def name(self) -> str:
@@ -214,11 +359,18 @@ class CMMluDownloader(DatasetDownloader):
         success_count = 0
         for task in tasks:
             try:
-                dataset = load_dataset("haonan-li/cmmlu", task, trust_remote_code=True)
-                save_path = os.path.join(self.output_dir, f"cmmlu_dataset/{task}")
-                dataset.save_to_disk(save_path)
-                print(f"CMMLU数据集 {task} 已保存到 {save_path}")
-                success_count += 1
+                dataset = download_with_retry(
+                    lambda: load_dataset("haonan-li/cmmlu", task, trust_remote_code=True),
+                    max_retries=3,
+                    delay=5
+                )
+                if dataset:
+                    save_path = os.path.join(self.output_dir, f"cmmlu_dataset/{task}")
+                    dataset.save_to_disk(save_path)
+                    print(f"CMMLU数据集 {task} 已保存到 {save_path}")
+                    success_count += 1
+                else:
+                    print(f"重试后仍无法加载CMMLU任务 {task}")
             except Exception as e:
                 print(f"无法加载CMMLU任务 {task}: {str(e)}")
         
@@ -229,6 +381,11 @@ class CMMluDownloader(DatasetDownloader):
 class MMLUDownloader(DatasetDownloader):
     """MMLU英文评估数据集下载器"""
     
+    def __init__(self, output_dir: str = "data"):
+        super().__init__(output_dir)
+        # 初始化网络配置
+        setup_network_config()
+    
     @property
     def name(self) -> str:
         return "mmlu"
@@ -238,14 +395,32 @@ class MMLUDownloader(DatasetDownloader):
         print("下载MMLU数据集...")
         
         try:
-            dataset = load_dataset("cais/mmlu", "all", trust_remote_code=True)
+            dataset = download_with_retry(
+                lambda: load_dataset("cais/mmlu", "all", trust_remote_code=True),
+                max_retries=3,
+                delay=5
+            )
+            if not dataset:
+                raise Exception("重试后仍无法加载MMLU")
         except Exception as e:
             print(f"无法以默认配置加载MMLU，尝试备用方式: {str(e)}")
             try:
-                dataset = load_dataset("lukaemon/mmlu", "all")
+                dataset = download_with_retry(
+                    lambda: load_dataset("lukaemon/mmlu", "all"),
+                    max_retries=3,
+                    delay=5
+                )
+                if not dataset:
+                    raise Exception("重试后仍无法加载备用MMLU")
             except Exception as e2:
                 print(f"备用MMLU也无法加载，尝试加载MMLU的一个子集: {str(e2)}")
-                dataset = load_dataset("cais/mmlu", "abstract_algebra")
+                dataset = download_with_retry(
+                    lambda: load_dataset("cais/mmlu", "abstract_algebra"),
+                    max_retries=3,
+                    delay=5
+                )
+                if not dataset:
+                    return False
         
         save_path = os.path.join(self.output_dir, "mmlu_dataset")
         dataset.save_to_disk(save_path)
@@ -256,6 +431,11 @@ class MMLUDownloader(DatasetDownloader):
 class GSM8KDownloader(DatasetDownloader):
     """GSM8K数学推理数据集下载器"""
     
+    def __init__(self, output_dir: str = "data"):
+        super().__init__(output_dir)
+        # 初始化网络配置
+        setup_network_config()
+    
     @property
     def name(self) -> str:
         return "gsm8k"
@@ -265,11 +445,19 @@ class GSM8KDownloader(DatasetDownloader):
         print("下载GSM8K数据集...")
         
         try:
-            dataset = load_dataset("gsm8k", "main", trust_remote_code=True)
-            save_path = os.path.join(self.output_dir, "gsm8k_dataset")
-            dataset.save_to_disk(save_path)
-            print(f"GSM8K数据集已保存到 {save_path}")
-            return True
+            dataset = download_with_retry(
+                lambda: load_dataset("gsm8k", "main", trust_remote_code=True),
+                max_retries=3,
+                delay=5
+            )
+            if dataset:
+                save_path = os.path.join(self.output_dir, "gsm8k_dataset")
+                dataset.save_to_disk(save_path)
+                print(f"GSM8K数据集已保存到 {save_path}")
+                return True
+            else:
+                print("重试后仍无法加载GSM8K数据集")
+                return False
         except Exception as e:
             print(f"无法加载GSM8K数据集: {str(e)}")
             return False
@@ -277,6 +465,11 @@ class GSM8KDownloader(DatasetDownloader):
 
 class HellaSwagDownloader(DatasetDownloader):
     """HellaSwag常识推理数据集下载器"""
+    
+    def __init__(self, output_dir: str = "data"):
+        super().__init__(output_dir)
+        # 初始化网络配置
+        setup_network_config()
     
     @property
     def name(self) -> str:
@@ -287,11 +480,19 @@ class HellaSwagDownloader(DatasetDownloader):
         print("下载HellaSwag数据集...")
         
         try:
-            dataset = load_dataset("Rowan/hellaswag", trust_remote_code=True)
-            save_path = os.path.join(self.output_dir, "hellaswag_dataset")
-            dataset.save_to_disk(save_path)
-            print(f"HellaSwag数据集已保存到 {save_path}")
-            return True
+            dataset = download_with_retry(
+                lambda: load_dataset("Rowan/hellaswag", trust_remote_code=True),
+                max_retries=3,
+                delay=5
+            )
+            if dataset:
+                save_path = os.path.join(self.output_dir, "hellaswag_dataset")
+                dataset.save_to_disk(save_path)
+                print(f"HellaSwag数据集已保存到 {save_path}")
+                return True
+            else:
+                print("重试后仍无法加载HellaSwag数据集")
+                return False
         except Exception as e:
             print(f"无法加载HellaSwag数据集: {str(e)}")
             return False
