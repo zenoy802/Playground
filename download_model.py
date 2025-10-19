@@ -39,11 +39,11 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="下载基础Qwen模型")
-    parser.add_argument("--model_name_or_path", type=str, default="Qwen/Qwen-7B", 
+    parser.add_argument("--model_name_or_path", type=str, default="Qwen/Qwen2.5-Math-1.5B", 
                         help="模型名称或路径")
-    parser.add_argument("--output_dir", type=str, default="models", 
+    parser.add_argument("--output_dir", type=str, default="/root/autodl-fs/models/", 
                         help="模型保存目录")
-    parser.add_argument("--use_fp16", action="store_true", default=True,
+    parser.add_argument("--use_fp16", action="store_true", default=False,
                         help="是否使用FP16精度保存模型")
     args = parser.parse_args()
     
