@@ -2,6 +2,9 @@
 # -*- coding: utf-8 -*-
 """
 下载基础Qwen模型
+‼️运行前手动设置:
+    export HF_HOME='/root/autodl-tmp/.cache/'
+    export HF_ENDPOINT='https://hf-mirror.com'
 """
 
 import os

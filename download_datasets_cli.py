@@ -3,6 +3,9 @@
 """
 数据集下载命令行工具
 支持按名称下载指定的数据集
+‼️运行前手动设置:
+    export HF_HOME='/root/autodl-tmp/.cache/'
+    export HF_ENDPOINT='https://hf-mirror.com'
 """
 
 import os
@@ -35,7 +38,7 @@ def main():
         "--output-dir", 
         type=str, 
         default="/root/autodl-tmp/data", 
-        help="数据保存目录 (默认: data)"
+        help="数据保存目录 (默认: /root/autodl-tmp/data)"
     )
     
     parser.add_argument(
