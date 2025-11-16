@@ -3,8 +3,7 @@
 """
 下载基础Qwen模型
 ‼️运行前手动设置:
-    export HF_HOME='/root/autodl-tmp/.cache/'
-    export HF_ENDPOINT='https://hf-mirror.com'
+    export HF_HOME='/root/autodl-tmp/.cache/'; export HF_ENDPOINT='https://hf-mirror.com'
 """
 
 import os
@@ -23,7 +22,7 @@ def main(args):
     # 下载并保存tokenizer
     print("下载tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, trust_remote_code=True)
-    tokenizer.save_pretrained(os.path.join(args.output_dir, f"{args.model_name_or_path}_tokenizer"))
+    tokenizer.save_pretrained(os.path.join(args.output_dir, f"{args.model_name_or_path}"))
     
     # 下载并保存模型
     print("下载模型...")
@@ -34,7 +33,7 @@ def main(args):
         trust_remote_code=True,
     )
     
-    model_save_path = os.path.join(args.output_dir, f"{args.model_name_or_path}_base_model")
+    model_save_path = os.path.join(args.output_dir, f"{args.model_name_or_path}")
     model.save_pretrained(model_save_path)
     print(f"模型已保存到: {model_save_path}")
     

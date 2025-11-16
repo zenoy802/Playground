@@ -9,7 +9,8 @@ functions_map = {
 }
 
 # change the path to your specific models from HF or other sources
-model = "/root/autodl-tmp/.cache/hub/models--Qwen--QwQ-32B/snapshots/976055f8c83f394f35dbd3ab09a285a984907bd0/"
+# model = "/root/autodl-tmp/.cache/hub/models--Qwen--QwQ-32B/snapshots/976055f8c83f394f35dbd3ab09a285a984907bd0/"
+model = "/root/autodl-fs/models/Qwen/QwQ-32B/"
 
 tools = [
     {
@@ -94,11 +95,30 @@ while True:
     print(response)
     print(f"----------Raw Response----------")
     tool_calls = response.choices[0].message.tool_calls
+    content = response.choices[0].message.content
     if not tool_calls:
-        print("QwQ: ", response.choices[0].message.content)
+        messages.append({"role": "assistant", "content": content})
+        print("QwQ: ", content)
         continue
     else:
+        tool_call_id = tool_calls[0].id
         functon_name = tool_calls[0].function.name
         function_args = json.loads(tool_calls[0].function.arguments)
+        if content:
+            messages.append({"role": "assistant", "tool_calls": [{"id": tool_call_id, "type": "function", "function": {"name": functon_name, "arguments": tool_calls[0].function.arguments}}], "content": response.choices[0].message.content})
+        else:
+            messages.append({"role": "assistant", "tool_calls": [{"id": tool_call_id, "type": "function", "function": {"name": functon_name, "arguments": tool_calls[0].function.arguments}}]})
         result = functions_map[functon_name](**function_args)
+        print(f"--------function result--------")
         print(result)
+        print(f"--------function result--------")
+        messages.append({"role": "tool", "tool_call_id": tool_call_id, "content": str(result)})
+        print(messages)
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            tools=tools
+        )
+        print(f"----------Tool Return Raw Response----------")
+        print(response)
+        print(f"----------Tool Return Raw Response----------")

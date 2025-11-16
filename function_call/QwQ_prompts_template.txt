@@ -1,0 +1,42 @@
+<|im_start|>system
+You are a helpful assistant.
+
+# Tools
+
+You may call one or more functions to assist with the user query.
+
+You are provided with function signatures within <tools></tools> XML tags:
+<tools>
+{"type": "function", "function": {"name": "get_current_weather", "description": "获取当前城市的天气", "parameters": {"type": "object", "properties": {"city": {"type": "string", "description": "城市名称, e.g. 杭州市，深圳市"}}, "required": ["city"]}}}
+{"type": "function", "function": {"name": "get_n_day_weather_forecast", "description": "获取给定城市未来的天气", "parameters": {"type": "object", "properties": {"city": {"type": "string", "description": "城市名称, e.g. 杭州市，深圳市"}}, "required": ["city"]}}}
+{"type": "function", "function": {"name": "get_computing_cluster_status", "description": "获取计算集群的状态", "parameters": {"type": "object", "properties": {"cluster_name": {"type": "string", "description": "集群名称, e.g. AY88E，AY175M"}}, "required": ["cluster_name"]}}}
+</tools>
+
+For each function call, return a json object with function name and arguments within <tool_call></tool_call> XML tags:
+<tool_call>
+{"name": <function-name>, "arguments": <args-json-object>}
+</tool_call><|im_end|>
+<|im_start|>user
+what\'s the weather like in hangzhou?<|im_end|>
+<|im_start|>assistant
+
+<tool_call>
+{"name": "get_current_weather", "arguments": {"city": "杭州市"}}
+</tool_call><|im_end|>
+<|im_start|>user
+<tool_response>
+{\'城市\': \'杭州市\', \'温度\': \'25℃\', \'天气状况\': \'多云\', \'风向\': \'东北风\', \'风力\': \'3级\', \'湿度\': \'60%\', \'报告时间\': \'2023-08-08 12:00:00\'}
+</tool_response><|im_end|>
+<|im_start|>user
+what about beijing?<|im_end|>
+<|im_start|>assistant
+
+<tool_call>
+{"name": "get_current_weather", "arguments": {"city": "北京市"}}
+</tool_call><|im_end|>
+<|im_start|>user
+<tool_response>
+{\'城市\': \'北京市\', \'温度\': \'25℃\', \'天气状况\': \'多云\', \'风向\': \'东北风\', \'风力\': \'3级\', \'湿度\': \'60%\', \'报告时间\': \'2023-08-08 12:00:00\'}
+</tool_response><|im_end|>
+<|im_start|>assistant
+<think>
