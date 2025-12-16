@@ -122,13 +122,18 @@ def heap_sort(arr):
             largest = r
         if largest != i:
             arr[i], arr[largest] = arr[largest], arr[i]
+            # 修复构建好的堆
             heapify(arr, n, largest)
     n = len(arr)
+    # 构建堆
     for i in range(n // 2 - 1, -1, -1):
         heapify(arr, n, i)
+    print(arr)
     for i in range(n-1, 0, -1):
         arr[i], arr[0] = arr[0], arr[i]
+        print(f"arr before heapify: {arr}")
         heapify(arr, i, 0)
+        print(f"arr after heapify: {arr}")
     return arr
 
 def buckset_sort(arr):
@@ -164,5 +169,7 @@ if __name__ == "__main__":
     # print(bubble_sort(arr_2))
     # print(insertion_sort(arr_1))
     # print(insertion_sort(arr_2))
-    print(counting_sort(arr_1))
-    print(counting_sort(arr_2))
+    # print(counting_sort(arr_1))
+    # print(counting_sort(arr_2))
+    print(heap_sort(arr_1))
+    print(heap_sort(arr_2))
