@@ -238,6 +238,9 @@ _pkginfo.txt
 !?*.[Cc]ache/
 
 # Others
+
+# Local session artifacts
+/leetcode_interview_prep/
 ClientBin/
 ~$*
 *~
@@ -411,3 +414,8 @@ FodyWeavers.xsd
 
 # Jupyter notebook
 .ipynb_checkpoints
+
+
+# local directories
+interview/
+markdown/
